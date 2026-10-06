@@ -45,6 +45,13 @@
   格式版本不支持、轮廓无效、关系引用缺失、快照版本重复/缺号、末版与包内
   当前装配不一致均整包拒绝并列出原因；目标版本过期 409，库与历史原状
   （详见 portable.py、DB.import_package）。
+
+演示数据：SEED_DEMO_DATA=1（默认）时，四片演示陶片仅在数据库文件**首次
+初始化**的同一启动过程写入一次（v1 基线）；已有数据库即使当前无碎片（删
+空 / 恢复到空装配 / 导入空包），重启也绝不补种——原装配、版本号与不可改
+快照保持不变；首次初始化时 SEED_DEMO_DATA=0 则保持空白（仅 v0 空白基线），
+之后再开启开关也不补种。判定依据是业务表是否首次建立（见 DB.__init__ 的
+freshly_initialized 与 meta.initialized_at），而非当前是否有碎片。
 """
 from __future__ import annotations
 
@@ -196,9 +203,13 @@ def _check_version(d: DB, expected: int):
 # ---------------------------------------------------------------- 应用生命周期
 
 def seed_demo(d: DB):
-    """初始化演示数据（仅当库为空且未禁用）。"""
-    if d.all_fragments():
-        return
+    """写入演示数据（四片陶片 + 版本历史）。
+
+    仅由 lifespan 在**数据库文件首次初始化**（d.freshly_initialized）且
+    SEED_DEMO_DATA 开启时调用一次。已有数据库——即使碎片已被用户全部删除、
+    历史已恢复到空装配，或整库导入了空装配包——重启时一律不补种，原装配、
+    版本号与不可改快照均保持不变。
+    """
     demo = [
         ("陶片A-左半", [[0, 0], [35, 0], [38, 15], [33, 30], [37, 45], [34, 60], [0, 60]]),
         ("陶片B-右半", [[1, 0], [4, 15], [-1, 30], [3, 45], [0, 60], [46, 60], [46, 0]]),
@@ -233,7 +244,9 @@ def ensure_baseline(d: DB):
 async def lifespan(app: FastAPI):
     global db
     db = DB(DB_PATH)
-    if SEED_DEMO_DATA:
+    # 演示数据只在数据库文件**首次初始化**且开关开启时写入一次；已有数据库
+    # （即便当前无碎片）重启绝不补种，随后再统一补记空白基线（无快照时）。
+    if SEED_DEMO_DATA and db.freshly_initialized:
         seed_demo(db)
     ensure_baseline(db)
     yield

@@ -63,11 +63,23 @@ class DB:
         parent = os.path.dirname(os.path.abspath(path))
         os.makedirs(parent, exist_ok=True)
         self.conn = sqlite3.connect(path, check_same_thread=False)
+        # 建表前探测：fragments 业务表尚不存在 = 数据库文件首次初始化。
+        # 既有数据库（哪怕碎片已被全部删除 / 历史恢复到空装配）此值恒为
+        # False，服务重启不得据此补种演示数据。
+        self.freshly_initialized = self.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table'"
+            " AND name = 'fragments'").fetchone() is None
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.executescript(SCHEMA)
         self.conn.execute(
             "INSERT OR IGNORE INTO meta(key, value) VALUES ('version', '0')")
+        if self.freshly_initialized:
+            # 持久化首次初始化时间戳，作为「本库已初始化、重启不再补种」
+            # 的显式凭证（INSERT OR IGNORE，永不更新）。
+            self.conn.execute(
+                "INSERT OR IGNORE INTO meta(key, value)"
+                " VALUES ('initialized_at', ?)", (_now(),))
         self.conn.commit()
         self.lock = threading.RLock()
 
