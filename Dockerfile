@@ -19,5 +19,5 @@ ENV DATABASE_PATH=/app/data/app.db \
 
 EXPOSE 8000
 
-# 启动时自动初始化数据库结构与演示数据
+# 启动时自动初始化数据库结构；仅首次初始化的库按 SEED_DEMO_DATA 写入演示数据
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

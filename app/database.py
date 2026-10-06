@@ -65,11 +65,28 @@ class DB:
         self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
+        # 建表前探测是否为从未初始化的数据库 —— 只有全新库才允许在启动时
+        # 播种演示数据；既有库（哪怕碎片已删空 / 历史恢复到空装配 / 迁移
+        # 导入后的库）重启一律保持原状，不补种、不新增版本与快照。
+        self.freshly_initialized = self._is_fresh_database()
         self.conn.executescript(SCHEMA)
         self.conn.execute(
             "INSERT OR IGNORE INTO meta(key, value) VALUES ('version', '0')")
         self.conn.commit()
         self.lock = threading.RLock()
+
+    def _is_fresh_database(self) -> bool:
+        """建表前判断该数据库是否从未初始化过（不含任何用户表）。
+
+        不存在的文件 / 0 字节空文件首次 connect 时 sqlite_master 为空，
+        返回 True；任何已含应用表结构的库均返回 False —— 即便当前无碎片
+        无关系（已全部删除或已恢复到空装配），也属于「既有数据库」，
+        重启后不得再次写入演示数据。
+        """
+        row = self.conn.execute(
+            "SELECT count(*) FROM sqlite_master"
+            " WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").fetchone()
+        return row[0] == 0
 
     # ------------------------------------------------------------ 版本
 

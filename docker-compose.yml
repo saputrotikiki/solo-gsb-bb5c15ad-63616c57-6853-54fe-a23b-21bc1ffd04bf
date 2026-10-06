@@ -6,7 +6,7 @@ services:
       - "8000:8000"
     environment:
       DATABASE_PATH: /app/data/app.db   # SQLite 数据库文件路径
-      SEED_DEMO_DATA: "1"               # 首次启动写入演示陶片（0 关闭）
+      SEED_DEMO_DATA: "1"               # 仅数据库首次初始化时写入演示陶片（0 关闭；既有库重启不补种）
     volumes:
       - pottery-data:/app/data          # 持久化数据
     restart: unless-stopped

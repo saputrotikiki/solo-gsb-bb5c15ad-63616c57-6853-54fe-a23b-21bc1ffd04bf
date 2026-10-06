@@ -196,9 +196,13 @@ def _check_version(d: DB, expected: int):
 # ---------------------------------------------------------------- 应用生命周期
 
 def seed_demo(d: DB):
-    """初始化演示数据（仅当库为空且未禁用）。"""
-    if d.all_fragments():
-        return
+    """在**首次初始化的全新数据库**上写入演示数据。
+
+    调用方（lifespan）须同时确认开关开启且数据库为本进程首次创建
+    （DB.freshly_initialized）。既有数据库 —— 哪怕碎片已被全部删除、
+    历史已恢复到空装配，或为迁移导入后的库 —— 重启时一律不调用本函数，
+    因此不会回填演示陶片，也不会新增装配版本或快照。
+    """
     demo = [
         ("陶片A-左半", [[0, 0], [35, 0], [38, 15], [33, 30], [37, 45], [34, 60], [0, 60]]),
         ("陶片B-右半", [[1, 0], [4, 15], [-1, 30], [3, 45], [0, 60], [46, 60], [46, 0]]),
@@ -233,7 +237,11 @@ def ensure_baseline(d: DB):
 async def lifespan(app: FastAPI):
     global db
     db = DB(DB_PATH)
-    if SEED_DEMO_DATA:
+    # 演示陶片仅在数据库首次初始化（文件本不存在 / 空文件建表）且开关开启
+    # 时写入一次；既有库即使当前无碎片（已删空 / 已恢复到空装配）也保持
+    # 原装配、版本与不可改快照，重启不补种；首次初始化时关闭开关，后续
+    # 重启再开启同样不补种。
+    if SEED_DEMO_DATA and db.freshly_initialized:
         seed_demo(db)
     ensure_baseline(db)
     yield

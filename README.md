@@ -76,7 +76,8 @@
 docker compose up --build
 ```
 
-构建镜像时自动安装依赖，容器启动时自动初始化 SQLite 表结构与演示数据。
+构建镜像时自动安装依赖，容器启动时自动初始化 SQLite 表结构；**仅数据库
+首次初始化**时按开关写入 4 片演示陶片（详见下节）。
 
 - **访问地址**：http://localhost:8000
 - **端口**：`8000`（宿主机映射，可在 `docker-compose.yml` 的 `ports` 中修改）
@@ -96,9 +97,49 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `DATABASE_PATH` | `data/app.db`（容器内 `/app/data/app.db`） | SQLite 数据库文件路径 |
-| `SEED_DEMO_DATA` | `1` | 首次启动且库为空时写入 4 片演示陶片；设为 `0` 关闭 |
+| `SEED_DEMO_DATA` | `1` | **仅数据库首次初始化**时写入 4 片演示陶片；设为 `0` 关闭 |
 
 Compose 默认将数据库挂载到命名卷 `pottery-data` 持久化。
+
+### 演示数据初始化时机
+
+4 片演示陶片（陶片 A/B/C/D，版本 v1 基线）**只在数据库文件首次初始化
+（文件不存在或为空文件、首次建表）且 `SEED_DEMO_DATA=1` 时写入一次**：
+
+- 首次初始化时设 `SEED_DEMO_DATA=0`：数据库保持空白（仅 v0 空白基线），
+  之后再改为 `1` 重启**不会补种**演示陶片；
+- 已写入演示数据的库，即使后来通过删除接口清空全部陶片，或把历史恢复到
+  空装配，重启后仍**保持删除/恢复后的原装配、版本号与不可改快照**，不会
+  回填演示陶片，也不会新增版本；
+- 通过迁移导入建立的库，重启后同样保持导入的原装配与历史，不补种、不
+  新增版本，迁移导入对空白目标与既有历史的判定不因重启改变。
+
+如需重新获得演示数据：备份后删除 `DATABASE_PATH` 指向的数据库文件（或换
+用新卷），以 `SEED_DEMO_DATA=1` 启动，即会在全新库上重新播种。
+
+## 碎片录入 / 删除 API 调用示例
+
+录入与删除走标准 REST 接口，删除为乐观并发：须携带当前装配版本号
+（见 `GET /api/assembly` 返回的 `version`），成功后返回新版本号。
+
+```bash
+# 录入碎片（毫米制、≥3 点的非自交闭合轮廓）
+curl -X POST http://localhost:8000/api/fragments \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"陶片E","contour":[[0,0],[40,0],[35,25],[10,30]]}'
+# 201: {"ok":true,"fragment":{"id":5,"name":"陶片E", ...},"version":2}
+
+# 查询当前装配版本（删除须携带）
+curl http://localhost:8000/api/assembly
+# {"version":2,"fragments":[...],"groups":[...],"relations":[...]}
+
+# 删除碎片 #5（及其全部关系）；版本过期返回 409
+curl -X DELETE 'http://localhost:8000/api/fragments/5?expected_version=2'
+# {"ok":true,"version":3,"assembly":{...}}
+```
+
+> 注意：清空全部陶片或恢复到空装配只是正常的历史变更，重启**不会**因此
+> 重新写入演示陶片（规则见上节）。
 
 ## 使用流程
 
